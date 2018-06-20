@@ -1,34 +1,39 @@
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 
-public class BmpProcessor extends JFrame {
-    private int height;
-    private int width;
+public class BmpProcessor extends JFrame implements KeyListener {
+    private int height; //the number of rows of pixels
+    private int width; //the number of columns of pixels
     private FileInputStream fis;
     private BufferedInputStream bis;
-    private int[][] red;
+    private int[][] red; //red[i][j] is the value of red channel of the pixel[i][j]
     private int[][] green;
     private int[][] blue;
-    private int[] redCount;
+    private int[] redCount; //red[i] is the number of pixels whose value of red channel is i
     private int[] greenCount;
     private int[] blueCount;
-    private boolean reversed;
-    private long emptyBytes;
+    private boolean reversed; //whether the image is bottom-up
+    private long emptyBytes; //the last bytes of a row may be meaningless
+    private int flag; //for panel refreshment
+    private DrawPanel drawPanel;
 
     public BmpProcessor(String fileName) throws IOException {
         fis = new FileInputStream(fileName);
         bis = new BufferedInputStream(fis);
+        flag = 0;
 
         byte[] header = new byte[54];
-        bis.read(header, 0, 54);
-        width = bytesToInt(header, 21);
-        height = bytesToInt(header, 25);
+        bis.read(header, 0, 54); //The first 54 bytes are header
+        width = bytesToInt(header, 21); //get the width of the image
+        height = bytesToInt(header, 25); // get the height of the image
 
         if(((int) header[25] & 0x80) == 0) {
-            reversed = true;
+            reversed = true; //if the first bit of the 25th byte is 0, the image is reversed (bottom-up)
         } else {
             reversed = false;
         }
@@ -45,25 +50,19 @@ public class BmpProcessor extends JFrame {
         } else {
             emptyBytes = 0;
         }
+
+        this.addKeyListener(this);
     }
 
     public int bytesToInt(byte[] bytes, int offset) {
-        if(((int) bytes[offset] & 0x80) == 0) {
-            return ((int) bytes[offset] & 0xff) << 24 |
-                    ((int) bytes[offset - 1] & 0xff) << 16 |
-                    ((int) bytes[offset - 2] & 0xff) << 8 |
-                    ((int) bytes[offset - 3] & 0xff);
-        } else {
-            int value1 = ((bytes[offset] ^ 0xff) & 0xff) << 24;
-            int value2 = ((bytes[offset - 1] ^ 0xff) & 0xff) << 16;
-            int value3 = ((bytes[offset - 2] ^ 0xff) & 0xff) << 8;
-            int value4 = ((bytes[offset - 3] ^ 0xff) & 0xff);
-            return (value1 | value2 | value3 | value4) + 1;
-        }
+        return ((int) bytes[offset] & 0xff) << 24 |
+                ((int) bytes[offset - 1] & 0xff) << 16 |
+                ((int) bytes[offset - 2] & 0xff) << 8 |
+                ((int) bytes[offset - 3] & 0xff);
     }
 
-    public void getRGB() throws IOException {
-        if(reversed) {
+    public void getRGB() throws IOException { //read the data area to get RGB values of each pixel
+        if(reversed) { //if the image is reversed, read from bottom to top
             for(int i = height - 1; i >= 0; i--) {
                 for(int j = 0; j < width; j++) {
                     blue[i][j] = bis.read();
@@ -75,7 +74,7 @@ public class BmpProcessor extends JFrame {
                     redCount[red[i][j]]++;
                 }
 
-                if(emptyBytes != 0) {
+                if(emptyBytes != 0) { //skip empty bytes
                     bis.skip(emptyBytes);
                 }
             }
@@ -101,7 +100,7 @@ public class BmpProcessor extends JFrame {
         bis.close();
     }
 
-    public YCbCr rgbToYCbCr(int r, int g, int b) {
+    public YCbCr rgbToYCbCr(int r, int g, int b) { //rgb -> ycbcr
         int y = (int)(0.299 * r + 0.587 * g + 0.114 * b);
         int cb = (int)(-0.1687 * r - 0.3313 * g + 0.5 * b) + 128;
         int cr = (int)(0.5 * r - 0.4187 * g - 0.0813 * b) + 128;
@@ -109,7 +108,7 @@ public class BmpProcessor extends JFrame {
         return new YCbCr(y, cb, cr);
     }
 
-    public RGB yCbCrToRGB(int y, int cb, int cr) {
+    public RGB yCbCrToRGB(int y, int cb, int cr) { //ycbcr -> rgb
         int r = (int)(y + 1.402 * (cr - 128));
         int g = (int)(y - 0.34414 * (cb - 128) - 0.71414 * (cr - 128));
         int b = (int)(y + 1.772 * (cb - 128));
@@ -125,225 +124,167 @@ public class BmpProcessor extends JFrame {
         return new RGB(r, g, b);
     }
 
+    @Override
+    public void keyTyped(KeyEvent e) {
+
+    }
+
+    @Override
+    public void keyPressed(KeyEvent e) {
+        if(drawPanel != null) {
+            flag = (flag + 1) % 5; //5 patterns, press any key to change into next pattern
+            if(flag != 1) { //image patterns, so the size is the same as the image
+                this.setSize(width, height);
+                drawPanel.setPreferredSize(new Dimension(width, height));
+            } else { //show the histogram
+                this.setSize(1084, 700);
+                drawPanel.setPreferredSize(new Dimension(1084, 700));
+            }
+            drawPanel.repaint();
+        }
+    }
+
+    @Override
+    public void keyReleased(KeyEvent e) {
+
+    }
+
     public void showBMP() {
-        this.setTitle("Test");
-        this.setSize(1024, 600);
-        this.setDefaultCloseOperation(3);
-        this.setResizable(false);
+        this.setTitle("BmpProcessor");
+        this.setSize(width, height);
+        this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         this.setLocationRelativeTo(null);
 
-//        Original original = new Original();
-//        Dimension dimension = new Dimension(width, height);
-//        original.setPreferredSize(dimension);
-//        this.add(original);
-//        this.setVisible(true);
-
-//        Brighter brighter = new Brighter();
-//        Dimension dimension = new Dimension(width, height);
-//        brighter.setPreferredSize(dimension);
-//        this.add(brighter);
-//        this.setVisible(true);
-
-//        GrayScale grayScale = new GrayScale();
-//        Dimension dimension = new Dimension(width, height);
-//        grayScale.setPreferredSize(dimension);
-//        this.add(grayScale);
-//        this.setVisible(true);
-
-//        OrderedDithering orderedDithering = new OrderedDithering();
-//        Dimension dimension = new Dimension(width, height);
-//        orderedDithering.setPreferredSize(dimension);
-//        this.add(orderedDithering);
-//        this.setVisible(true);
-
-        Histogram histogram = new Histogram();
-        Dimension dimension = new Dimension(1024, 600);
-        histogram.setPreferredSize(dimension);
-        this.add(histogram);
+        this.setResizable(true);
         this.setVisible(true);
+
+        drawPanel = new DrawPanel();
+
+        this.add(drawPanel);
     }
 
-    public class Original extends JPanel {
-        public void paint(Graphics g) {
-            super.paint(g);
-            for(int i = 0; i < height; i++) {
-                for(int j = 0; j < width; j++) {
-                    g.setColor(new Color(red[i][j], green[i][j], blue[i][j]));
-                    g.fillRect(j, i, 1, 1);
-                }
+    public void drawOriginal(Graphics g) { //draw the original image
+        for(int i = 0; i < height; i++) {
+            for(int j = 0; j < width; j++) {
+                g.setColor(new Color(red[i][j], green[i][j], blue[i][j]));
+                g.fillRect(j, i, 1, 1);
             }
         }
     }
 
-    public class Histogram extends JPanel {
-        public void paint(Graphics g) {
-            super.paint(g);
-            int width = getWidth();
-            int height = getHeight();
-            int part = height / 3;
-            double intervalX = width / 256.0;
+    public void drayHistogram(Graphics g) { //draw the histogram of red channel, green channel and blue channel
+        int width = getWidth();
+        int height = getHeight();
 
-            int redMaxValue = 0, greenMaxValue = 0, blueMaxValue = 0;
-            int redIndex = 0, blueIndex = 0, greenIndex = 0;
-            for(int i = 0; i < 256; i++) {
-                if(redCount[i] > redMaxValue) {
-                    redIndex = i;
-                    redMaxValue = redCount[i];
-                }
-                if(greenCount[i] > greenMaxValue) {
-                    greenIndex = i;
-                    greenMaxValue = greenCount[i];
-                }
-                if(blueCount[i] > blueMaxValue) {
-                    blueIndex = i;
-                    blueMaxValue = blueCount[i];
-                }
+        int part = (height - 100) / 3; //divide the panel into 3 parts to draw 3 histograms (red, green, blue)
+        double intervalX = (width - 60) / 256.0; //the width of a rectangle
+
+        int redMaxValue = 0, greenMaxValue = 0, blueMaxValue = 0;
+        for(int i = 0; i < 256; i++) {
+            if(redCount[i] > redMaxValue) {
+                redMaxValue = redCount[i];
             }
-
-            int lineBetweenRedAndGreen = part;
-            int lineBetweenGreenAndBlue = 2 * part;
-            int bottom = 3 * part;
-
-            System.out.println(blueCount[0] + " " + blueCount[1] + " " + blueCount[2]);
-            System.out.println(redMaxValue + " " + greenMaxValue + " " + blueMaxValue);
-            System.out.println(redIndex + " " + greenIndex + " " + blueIndex);
-
-            g.setColor(Color.RED);
-            double intervalY = part / 1.2 / redMaxValue;
-            for(int i = 0; i < 256; i++) {
-                g.fillRect((int)(intervalX * i), (int)(lineBetweenRedAndGreen - intervalY * redCount[i]), (int)(intervalX), (int)(intervalY * redCount[i]));
+            if(greenCount[i] > greenMaxValue) {
+                greenMaxValue = greenCount[i];
             }
-
-            g.setColor(Color.GREEN);
-            intervalY = part / 1.2 / greenMaxValue;
-            for(int i = 0; i < 256; i++) {
-                g.fillRect((int)(intervalX * i), (int)(lineBetweenGreenAndBlue - intervalY * greenCount[i]), (int)(intervalX), (int)(intervalY * greenCount[i]));
+            if(blueCount[i] > blueMaxValue) {
+                blueMaxValue = blueCount[i];
             }
+        }
 
-            g.setColor(Color.BLUE);
-            intervalY = part / 1.2 / blueMaxValue;
-            for(int i = 0; i < 256; i++) {
-                g.fillRect((int)(intervalX * i), (int)(bottom - intervalY * blueCount[i]), (int)(intervalX), (int)(intervalY * blueCount[i]));
+        int lineBetweenRedAndGreen = part; //part 1 for red
+        int lineBetweenGreenAndBlue = 2 * part; //part 2 for green
+        int bottom = 3 * part; //part 3 for blue
+
+        g.setColor(Color.RED);
+        double intervalY = part / 1.2 / redMaxValue;
+        for(int i = 0; i < 256; i++) { //draw the histogram of the red channel
+            g.fillRect((int)(30 + intervalX * i), (int)(lineBetweenRedAndGreen - intervalY * redCount[i]), (int)(intervalX), (int)(intervalY * redCount[i]));
+        }
+
+        g.setColor(Color.GREEN);
+        intervalY = part / 1.2 / greenMaxValue;
+        for(int i = 0; i < 256; i++) { //draw the histogram of the green channel
+            g.fillRect((int)(30 + intervalX * i), (int)(lineBetweenGreenAndBlue - intervalY * greenCount[i]), (int)(intervalX), (int)(intervalY * greenCount[i]));
+        }
+
+        g.setColor(Color.BLUE);
+        intervalY = part / 1.2 / blueMaxValue;
+        for(int i = 0; i < 256; i++) { //draw the histogram of the blue channel
+            g.fillRect((int)(30 + intervalX * i), (int)(bottom - intervalY * blueCount[i]), (int)(intervalX), (int)(intervalY * blueCount[i]));
+        }
+    }
+
+    public void drawBrighter(Graphics g) { //draw the image that is 1.5 times brighter
+        YCbCr yCbCr;
+        RGB rgb;
+
+        for(int i = 0; i < height; i++) {
+            for(int j = 0; j < width; j++) {
+                yCbCr = rgbToYCbCr(red[i][j], green[i][j], blue[i][j]);
+                int y = yCbCr.y;
+                int cb = yCbCr.cb;
+                int cr = yCbCr.cr;
+
+                y = (int)(1.5 * y); //y is the luminance, 1.5 times brighter means y * 1.5
+                y = Integer.min(y, 255);
+
+                rgb = yCbCrToRGB(y, cb, cr);
+
+                g.setColor(new Color(rgb.r, rgb.g, rgb.b));
+                g.fillRect(j, i, 1, 1);
             }
         }
     }
 
-    public class Brighter extends JPanel {
-        int[][] y = new int[height][width];
-        int[][] cr = new int[height][width];
-        int[][] cb = new int[height][width];
+    public void drawGrayScale(Graphics g) {
+        YCbCr yCbCr;
 
-        public void paint(Graphics g) {
-            super.paint(g);
-            YCbCr yCbCr;
-            RGB rgb;
-            for(int i = 0; i < height; i++) {
-                for(int j = 0; j < width; j++) {
-                    yCbCr = rgbToYCbCr(red[i][j], green[i][j], blue[i][j]);
-                    int y = yCbCr.y;
-                    int cb = yCbCr.cb;
-                    int cr = yCbCr.cr;
+        for(int i = 0; i < height; i++) {
+            for(int j = 0; j < width; j++) {
+                yCbCr = rgbToYCbCr(red[i][j], green[i][j], blue[i][j]);
+                int y = yCbCr.y;
 
-                    y = (int)(1.5 * y);
-                    y = Integer.min(y, 255);
-
-                    rgb = yCbCrToRGB(y, cb, cr);
-
-                    g.setColor(new Color(rgb.r, rgb.g, rgb.b));
-                    g.fillRect(j, i, 1, 1);
-                }
+                g.setColor(new Color(y, y, y)); //grayscale image is just to reserve the luminance
+                g.fillRect(j, i, 1, 1);
             }
         }
     }
 
-    public class GrayScale extends JPanel {
-        int[][] y = new int[height][width];
+    public void drawOrderedDithering(Graphics g) {
+        int[][] matrix = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+        //the dithering matrix is 4 by 4. Thus, 0-15 are mapped to 0, 16-31 are mapped to 1, 32-47 are mapped to 2...
 
-        public void paint(Graphics g) {
-            super.paint(g);
-            YCbCr yCbCr;
+        YCbCr yCbCr;
 
-            for(int i = 0; i < height; i++) {
-                for(int j = 0; j < width; j++) {
-                    yCbCr = rgbToYCbCr(red[i][j], green[i][j], blue[i][j]);
-                    int y = yCbCr.y;
+        for(int i = 0; i < height; i++) {
+            for(int j = 0; j < width; j++) {
+                yCbCr = rgbToYCbCr(red[i][j], green[i][j], blue[i][j]);
 
-                    g.setColor(new Color(y, y, y));
-                    g.fillRect(j, i, 1, 1);
+                if(yCbCr.y / 16 < matrix[i % matrix.length][j % matrix[0].length]) {
+                    g.setColor(new Color(0, 0, 0));
+                } else {
+                    g.setColor(new Color(255, 255, 255));
                 }
+
+                g.fillRect(j, i, 1, 1);
             }
         }
     }
 
-    public class OrderedDithering extends JPanel {
-        int[][] matrix =
-                {
-                        {
-                            0, 192, 48, 240, 12, 204, 60, 252, 3, 195, 51, 243, 15, 207, 63, 255
-                        },
-                        {
-                            128, 64, 176, 112, 140, 76, 188, 124, 131, 67, 179, 115, 143, 79, 191, 127
-                        },
-                        {
-                            32, 224, 16, 208, 44, 236, 28, 220, 35, 227, 19, 211, 47, 239, 31, 223
-                        },
-                        {
-                            160, 96, 144, 80, 172, 108, 156, 92, 163, 99, 147, 83, 175, 111, 159, 95
-                        },
-                        {
-                            8, 200, 56, 248, 4, 196, 52, 244, 11, 203, 59, 251, 7, 199, 55, 247
-                        },
-                        {
-                            136, 72, 184, 120, 132, 68, 180, 116, 139, 75, 187, 123, 135, 71, 183, 119
-                        },
-                        {
-                            40, 232, 24, 216, 36, 228, 20, 212, 43, 235, 27, 219, 39, 231, 23, 215
-                        },
-                        {
-                            168, 104, 152, 88, 164, 100, 148, 84, 171, 107, 155, 91, 167, 103, 151, 87
-                        },
-                        {
-                            2, 194, 50, 242, 14, 206, 62, 254, 1, 193, 49, 241, 13, 205, 61, 253
-                        },
-                        {
-                            130, 66, 178, 114, 142, 78, 190, 126, 129, 65, 177, 113, 141, 77, 189, 125
-                        },
-                        {
-                            34, 226, 18, 210, 46, 238, 30, 222, 33, 225, 17, 209, 45, 237, 29, 221
-                        },
-                        {
-                            162, 98, 146, 82, 174, 110, 158, 94, 161, 97, 145, 81, 173, 109, 157, 93
-                        },
-                        {
-                            10, 202, 58, 250, 6, 198, 54, 246, 9, 201, 57, 249, 5, 197, 53, 245
-                        },
-                        {
-                            138, 74, 186, 122, 134, 70, 182, 118, 137, 73, 185, 121, 133, 69, 181, 117
-                        },
-                        {
-                            42, 234, 26, 218, 38, 230, 22, 214, 41, 233, 25, 217, 37, 229, 21, 213
-                        },
-                        {
-                            170, 106, 154, 90, 166, 102, 150, 86, 169, 105, 153, 89, 165, 101, 149, 85
-                        }
-                };
-
+    public class DrawPanel extends JPanel {
         public void paint(Graphics g) {
             super.paint(g);
-            YCbCr yCbCr;
-
-            for(int i = 0; i < height; i++) {
-                for(int j = 0; j < width; j++) {
-                    yCbCr = rgbToYCbCr(red[i][j], green[i][j], blue[i][j]);
-
-                    if(yCbCr.y < matrix[i % matrix.length][j % matrix[0].length]) {
-                        g.setColor(new Color(0, 0, 0));
-                    } else {
-                        g.setColor(new Color(255, 255, 255));
-                    }
-
-                    g.fillRect(j, i, 1, 1);
-                }
+            if(flag == 0) { //change the pattern according to flag
+                drawOriginal(g);
+            } else if(flag == 1) {
+                drayHistogram(g);
+            } else if(flag == 2) {
+                drawBrighter(g);
+            } else if(flag == 3) {
+                drawGrayScale(g);
+            } else {
+                drawOrderedDithering(g);
             }
         }
     }
