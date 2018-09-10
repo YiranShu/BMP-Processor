@@ -1,1 +1,1 @@
-# BMP-Processor version 1.0
+# BMP-Processor
